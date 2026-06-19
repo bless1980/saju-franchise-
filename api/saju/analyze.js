@@ -192,25 +192,30 @@ async function handleDaily({ res, profile, config, prompt, model, visitorId, ord
     }
   }
 
-  // 2) 캐시 미스 → 만세력(포인트 차감) + AI 생성
-  const manse = await computeManse(profile, config);
-  const daily = await generateDailyFortune({ profile, summary: manse.summary, model, prompt, today: td, todayPillar: tp });
+  // 2) 캐시 미스 → 만세력 API 호출 없이 프로필 기반 최소 summary로 AI 생성(포인트 차감 없음)
+  const dailySummary = {
+    name: profile.name,
+    gender: profile.gender || "",
+    birthDate: profile.birthDate,
+    birthTime: profile.birthTime || "",
+    calendar: profile.calendar || "solar",
+  };
+  const daily = await generateDailyFortune({ profile, summary: dailySummary, model, prompt, today: td, todayPillar: tp });
   if (sb) {
     const dailyRow = {
       product_id: "daily-fortune",
       profile_name: profile.name,
-      manse: manse.full,
-      summary: { ...manse.summary, pk }, // pk 포함(서버 캐시 조회용, 사용자 응답에는 미포함)
+      manse: null,
+      summary: { ...dailySummary, pk }, // pk 포함(서버 캐시 조회용, 사용자 응답에는 미포함)
       headline: daily.headline,
       sections: daily,
       visitor_id: visitorId || null,
       order_id: orderId || null,
     };
-    // 계정 식별 함께 저장. 계정 컬럼 미마이그레이션이면 기본 행으로 폴백(캐시 누락 방지).
     sb.from("analyses").insert({ ...dailyRow, ...acct }).then(
       ({ error } = {}) => { if (error) sb.from("analyses").insert(dailyRow).then(() => {}, () => {}); },
       () => { sb.from("analyses").insert(dailyRow).then(() => {}, () => {}); },
     );
   }
-  return sendJson(res, 200, { ok: true, kind: "daily", daily, summary: manse.summary, today: td, todayPillar: tp, cost: manse.cost });
+  return sendJson(res, 200, { ok: true, kind: "daily", daily, summary: dailySummary, today: td, todayPillar: tp, cost: 0 });
 }
